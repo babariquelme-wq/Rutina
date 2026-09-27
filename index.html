@@ -135,6 +135,20 @@ button{ cursor:pointer; border:0; background:none; padding:0; }
   border-radius:20px; padding:4px 13px;
 }
 .corte .tx{ display:block; font-size:12.5px; color:rgba(242,240,236,.55); margin-top:10px; max-width:270px; line-height:1.5; }
+/* dos ejercicios en la misma máquina: van pegados */
+.ej.par-ini{ border-bottom:0; padding-bottom:4px; }
+.ej.par-fin{ border-top:0; padding-top:10px; }
+.ej.par-ini, .ej.par-fin{ position:relative; padding-left:12px; }
+.ej.par-ini::before, .ej.par-fin::before{
+  content:""; position:absolute; left:0; width:2px; background:var(--c); opacity:.5;
+}
+.ej.par-ini::before{ top:22px; bottom:0; border-radius:2px 2px 0 0; }
+.ej.par-fin::before{ top:0; bottom:22px; border-radius:0 0 2px 2px; }
+.mismo{
+  display:inline-block; margin-left:8px; font-size:9.5px; font-weight:600;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--c);
+  border:1px solid var(--c); border-radius:20px; padding:2px 8px; vertical-align:2px;
+}
 .ej.extra .ej-t h4{ font-weight:400; }
 .ej.extra .ej-t .i{ color:var(--c); }
 
@@ -543,9 +557,9 @@ const PLAN = [
   { n:3, titulo:"Piernas + abdomen", extrasTit:"Abdominales · 3 vueltas",
     A:[
       {e:"Sentadilla",              s:4, r:"6–8",   g:"piernas"},
-      {e:"Prensa",                  s:3, r:"10",    g:"piernas"},
+      {e:"Prensa",                  s:3, r:"10",    g:"piernas", par:"ini", espeja:"Elevación de talones"},
+      {e:"Elevación de talones",    s:3, r:"12–15", g:"piernas", par:"fin"},
       {e:"Peso muerto rumano",      s:3, r:"8–10",  g:"piernas"},
-      {e:"Elevación de talones",    s:3, r:"12–15", g:"piernas"},
       {e:"Extensión de cuádriceps", s:2, r:"12–15", g:"piernas"},
     ],
     B:[
@@ -579,6 +593,24 @@ function descansoDe(ex, i){
 const LS = "rutina.v2";
 let bd = leer();
 function leer(){
+  try{ const c = JSON.parse(localStorage.getItem(LS)); if(c && c.sesiones && c.sesiones.length) return c; }catch(e){}
+  // Si venís de la versión anterior, se traen esos entrenamientos una sola vez.
+  try{
+    const v1 = JSON.parse(localStorage.getItem("rutina.v1"));
+    if(v1 && v1.sesiones && v1.sesiones.length){
+      const migrada = { sesiones: v1.sesiones.map(s=>({
+        id: s.id || Date.now() + Math.random(),
+        dia: s.dia, fecha: s.fecha, duracion: s.duracion || 0,
+        variante: s.variante || "A",
+        ejercicios: (s.ejercicios || []).map(e=>({
+          nom: e.nom, extra: false,
+          series: (e.series || []).map(x=>({ kg:x.kg, reps:x.reps, hecha:true }))
+        }))
+      })), activa:null, ultima:null };
+      localStorage.setItem(LS, JSON.stringify(migrada));
+      return migrada;
+    }
+  }catch(e){}
   try{ const c = JSON.parse(localStorage.getItem(LS)); if(c && c.sesiones) return c; }catch(e){}
   return { sesiones:[], activa:null, ultima:null };
 }
@@ -839,10 +871,10 @@ function pintarSes(){
           prev.series.map(s=> (s.kg ? s.kg + "×" : "") + (s.reps || "") + unidad).join(" · ") + "</b>";
         if(mej) ref += " · récord <b>" + mej.kg + "×" + mej.reps + "</b>";
       }
-      return abre + `<div class="ej ${listo?"ok":""} ${reg.extra?"extra":""}" style="--c:${colorDe(a.dia)}">
+      return abre + `<div class="ej ${listo?"ok":""} ${reg.extra?"extra":""} ${ex.par?("par-"+ex.par):""}" style="--c:${colorDe(a.dia)}">
         <div class="ej-t">
           <span class="i">${reg.extra ? "E" + (i - primerExtra + 1) : String(i+1).padStart(2,"0")}</span>
-          <h4>${reg.nom}</h4>
+          <h4>${reg.nom}${ex.par === "fin" ? '<span class="mismo">misma carga</span>' : ""}</h4>
           <span class="obj">${ex.s}×${ex.r}</span>
         </div>
         <div class="ej-ref">${ref}</div>
@@ -1002,9 +1034,18 @@ $("sVelo").addEventListener("click", cerrarRueda);
 $("sListo").addEventListener("click", ()=>{
   if(!ruedaDestino) return cerrarRueda();
   const { i, j } = ruedaDestino;
-  const s = bd.activa.ejercicios[i].series[j];
+  const ej = bd.activa.ejercicios[i];
+  const s = ej.series[j];
   s.kg = valorDe($("rKg"));
   s.reps = valorDe($("rRep"));
+
+  // Prensa y gemelos comparten máquina: el peso de uno se copia al otro.
+  const info = listaEjercicios(bd.activa.dia).find(x=> x.e === ej.nom);
+  if(info && info.espeja && s.kg !== null){
+    const otro = bd.activa.ejercicios.find(x=> x.nom === info.espeja);
+    if(otro && otro.series[j] && !otro.series[j].hecha) otro.series[j].kg = s.kg;
+  }
+
   guardar(); cerrarRueda(); pintarSes();
 });
 
