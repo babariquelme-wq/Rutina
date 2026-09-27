@@ -58,6 +58,18 @@ button{ cursor:pointer; border:0; background:none; padding:0; }
   text-transform:uppercase; color:rgba(242,240,236,.55); max-width:42%;
 }
 
+/* ── contador por mes ── */
+.meses{ display:flex; gap:7px; margin:0 0 24px; }
+.mes-c{
+  flex:1; background:rgba(242,240,236,.05); border-radius:12px;
+  padding:11px 6px 10px; text-align:center;
+}
+.mes-c.act{ background:var(--coral); }
+.mes-c b{ display:block; font-size:20px; font-weight:600; letter-spacing:-.02em; color:var(--bl); line-height:1; }
+.mes-c.act b{ color:#FFF3EA; }
+.mes-c span{ display:block; font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--tenue); margin-top:5px; }
+.mes-c.act span{ color:rgba(255,243,234,.75); }
+
 /* ── reloj de aeropuerto: las fichas giran al cambiar ── */
 .tablero{
   display:flex; align-items:center; gap:3px;
@@ -279,7 +291,7 @@ button{ cursor:pointer; border:0; background:none; padding:0; }
   aspect-ratio:1; border-radius:11px; display:flex; flex-direction:column;
   align-items:center; justify-content:center; gap:1px; font-size:14px; color:var(--tenue);
 }
-.cd.mes{ background:#303030; color:var(--gris); animation:pop .3s cubic-bezier(.2,.9,.3,1.5) both; }
+.cd.mes{ background:#303030; color:var(--gris); border:0; cursor:pointer; animation:pop .3s cubic-bezier(.2,.9,.3,1.5) both; }
 @keyframes pop{ from{opacity:0; transform:scale(.6)} to{opacity:1; transform:none} }
 .cd.hay{ color:#151515; font-weight:600; }
 .cd.hay i{ font-size:8px; font-style:normal; opacity:.75; letter-spacing:.04em; }
@@ -416,6 +428,7 @@ nav button i{ display:block; font-size:17px; font-style:normal; margin-bottom:3p
         <div class="tablero" id="reloj" aria-label="Hora"></div>
       </div>
     </div>
+    <div class="meses" id="meses"></div>
     <div id="tarjetasDias"></div>
     <p class="pie">
       Los datos viven en este teléfono.<br>
@@ -504,6 +517,7 @@ const PLAN = [
       {e:"Fondos en paralelas",                  s:3, r:"8–12",  g:"pecho"},
       {e:"Aperturas con mancuernas",             s:2, r:"12–15", g:"pecho"},
       {e:"Tríceps en polea",                     s:3, r:"10–12", g:"brazos"},
+      {e:"Press declinado en barra",             s:3, r:"8–10",  g:"pecho"},
       {e:"Extensión de tríceps sobre la cabeza", s:3, r:"10–12", g:"brazos"},
     ],
     B:[
@@ -571,7 +585,13 @@ function leer(){
 function guardar(){ try{ localStorage.setItem(LS, JSON.stringify(bd)); }catch(e){} }
 
 const $ = id => document.getElementById(id);
-const hoyISO = ()=> new Date().toISOString().slice(0,10);
+// La fecha del teléfono, no la de Greenwich: en Nueva Zelanda el UTC va un día
+// atrás durante casi toda la jornada y los entrenamientos caían en el día equivocado.
+function iso(d){
+  d = d || new Date();
+  return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+}
+const hoyISO = ()=> iso();
 const diaDe = n => PLAN.find(d=> d.n === n);
 const colorDe = n => "var(--d" + n + ")";
 // El día trae todo junto: la base y los extras. En el momento decidís
@@ -722,6 +742,17 @@ function pintarHoy(){
     if(fx < viejo){ viejo = fx; sug = d.n; }
   });
 
+  // cuántos entrenamientos por mes, los últimos cinco
+  const MES3 = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+  let hm = "";
+  for(let k = 4; k >= 0; k--){
+    const d0 = new Date(); d0.setDate(1); d0.setMonth(d0.getMonth() - k);
+    const pref = d0.getFullYear() + "-" + String(d0.getMonth()+1).padStart(2,"0");
+    const n = new Set(bd.sesiones.filter(x=> x.fecha.startsWith(pref)).map(x=> x.fecha)).size;
+    hm += `<div class="mes-c ${k===0?"act":""}"><b class="tnum">${n}</b><span>${MES3[d0.getMonth()]}</span></div>`;
+  }
+  $("meses").innerHTML = hm;
+
   $("tarjetasDias").innerHTML = PLAN.map(d=>{
     const u = ultimaSesionDe(d.n);
     const act = bd.activa && bd.activa.dia === d.n;
@@ -729,7 +760,7 @@ function pintarHoy(){
       : (u ? hace(u.fecha) + (u.variante === "B" ? " · con extras" : " · solo la base") : "Sin registrar todavía");
     return `<button class="dia-b ${(d.n === sug || act) ? "ahora" : ""}" data-d="${d.n}" style="--c:${colorDe(d.n)}">
       <span class="barra"></span>
-      <span class="n">DÍA 0${d.n}${d.n === sug && !act ? " · TOCA HOY" : ""}</span>
+      <span class="n">DÍA 0${d.n}${act ? " · EN CURSO" : (d.n === sug ? " · PRÓXIMO ENTRENAMIENTO" : "")}</span>
       <h3>${d.titulo}</h3>
       <span class="m">${meta}</span>
       <span class="flecha">›</span>
@@ -776,25 +807,25 @@ function pintarSes(){
   if(!a){ ir("hoy"); return; }
   const d = diaDe(a.dia);
   const lista = listaEjercicios(a.dia);
-  const corte = baseDe(a.dia);
-  // el progreso se mide sobre la base; los extras suman aparte
-  const hBase = a.ejercicios.slice(0, corte).reduce((n,e)=> n + e.series.filter(x=>x.hecha).length, 0);
-  const tBase = a.ejercicios.slice(0, corte).reduce((n,e)=> n + e.series.length, 0);
-  const hExtra = a.ejercicios.slice(corte).reduce((n,e)=> n + e.series.filter(x=>x.hecha).length, 0);
+  const base = a.ejercicios.filter(e=> !e.extra);
+  const hBase = base.reduce((n,e)=> n + e.series.filter(x=>x.hecha).length, 0);
+  const tBase = base.reduce((n,e)=> n + e.series.length, 0);
+  const hExtra = a.ejercicios.filter(e=> e.extra).reduce((n,e)=> n + e.series.filter(x=>x.hecha).length, 0);
   const h = hechas(a);
   const pct = tBase ? Math.round(hBase/tBase*100) : 0;
 
   $("v-ses").innerHTML = `
     <div class="ses-cab" style="--c:${colorDe(a.dia)}">
       <button class="atras">‹</button>
-      <span class="t"><b>Día 0${a.dia}</b><span>${hBase}/${tBase} series${hExtra ? " · +" + hExtra + " extra" : ""}</span></span>
+      <span class="t"><b>Día 0${a.dia}${a.editando ? " · editando" : ""}</b><span>${a.editando ? fmtFecha(a.fecha) + " · " : ""}${hBase}/${tBase} series${hExtra ? " · +" + hExtra + " extra" : ""}</span></span>
       <span class="pc tnum">${pct}%</span>
     </div>
     <div class="linea-prog" style="--c:${colorDe(a.dia)}"><i style="width:${pct}%"></i></div>
 
     ${a.ejercicios.map((reg, i)=>{
-      const ex = lista[i] || { e:reg.nom, s:reg.series.length, r:"" };
-      const abre = i === corte ? `<div class="corte">
+      const ex = lista.find(x=> x.e === reg.nom) || { e:reg.nom, s:reg.series.length, r:"", extra:reg.extra };
+      const primerExtra = a.ejercicios.findIndex(x=> x.extra);
+      const abre = (i === primerExtra && primerExtra > 0) ? `<div class="corte">
         <span class="et">${d.extrasTit || "Extras"}</span>
         <span class="tx">Si te da el tiempo, seguí por acá. Lo que no hagas, dejalo sin marcar.</span>
       </div>` : "";
@@ -808,9 +839,9 @@ function pintarSes(){
           prev.series.map(s=> (s.kg ? s.kg + "×" : "") + (s.reps || "") + unidad).join(" · ") + "</b>";
         if(mej) ref += " · récord <b>" + mej.kg + "×" + mej.reps + "</b>";
       }
-      return abre + `<div class="ej ${listo?"ok":""} ${ex.extra?"extra":""}" style="--c:${colorDe(a.dia)}">
+      return abre + `<div class="ej ${listo?"ok":""} ${reg.extra?"extra":""}" style="--c:${colorDe(a.dia)}">
         <div class="ej-t">
-          <span class="i">${ex.extra ? "E" + (i - corte + 1) : String(i+1).padStart(2,"0")}</span>
+          <span class="i">${reg.extra ? "E" + (i - primerExtra + 1) : String(i+1).padStart(2,"0")}</span>
           <h4>${reg.nom}</h4>
           <span class="obj">${ex.s}×${ex.r}</span>
         </div>
@@ -830,7 +861,7 @@ function pintarSes(){
       </div>`;
     }).join("")}
 
-    <button class="fin" id="btnFin">${h ? "Terminar entrenamiento" : "Cancelar"}</button>
+    <button class="fin" id="btnFin">${a.editando ? "Guardar cambios" : (h ? "Terminar entrenamiento" : "Cancelar")}</button>
     <p class="pie">Se guarda solo a medida que cargás.</p>`;
 
   $("v-ses").querySelector(".atras").addEventListener("click", ()=> ir("hoy"));
@@ -878,6 +909,17 @@ function terminar(){
   a.ejercicios = a.ejercicios
     .map(e=> ({ nom:e.nom, series:e.series.filter(s=> s.hecha) }))
     .filter(e=> e.series.length);
+  if(a.editando){
+    // veníamos corrigiendo una sesión vieja: se reemplaza y listo
+    delete a.editando;
+    const k = bd.sesiones.findIndex(x=> x.id === a.id);
+    if(k >= 0) bd.sesiones[k] = a; else bd.sesiones.push(a);
+    bd.sesiones.sort((x,y)=> y.fecha.localeCompare(x.fecha) || y.id - x.id);
+    bd.activa = null;
+    guardar(); pararDescanso();
+    ir("cal");
+    return;
+  }
   bd.sesiones.unshift(a);
   bd.activa = null;
   bd.ultima = a.fecha;
@@ -998,7 +1040,7 @@ function festejar(ses){
   const caja = $("fiesta");
   caja.style.setProperty("--c", colorDe(ses.dia));
   $("fT").textContent = "Día 0" + ses.dia + " hecho";
-  $("fS").textContent = d.titulo + (ses.variante === "B" ? " · con extras" : "");
+  $("fS").textContent = frase(ses);
   $("fC").textContent = ses.duracion;
   contar($("fA"), hechas(ses), 800, 1.1);
   contar($("fB"), Math.round(volumen(ses)), 1000, 1.1, true);
@@ -1018,6 +1060,55 @@ function festejar(ses){
   caja.classList.add("on");
   if(navigator.vibrate) navigator.vibrate([16,70,16]);
 }
+// Una frase con datos de verdad: el mes, el récord, la racha.
+function frase(ses){
+  const MES = ["enero","febrero","marzo","abril","mayo","junio","julio",
+               "agosto","septiembre","octubre","noviembre","diciembre"];
+  const f = new Date(ses.fecha + "T00:00:00");
+  const pref = ses.fecha.slice(0,7);
+  const esteMes = new Set(bd.sesiones.filter(x=> x.fecha.startsWith(pref)).map(x=> x.fecha)).size;
+
+  // ¿rompió algún récord hoy?
+  const records = [];
+  ses.ejercicios.forEach(e=>{
+    let mejorAntes = 0;
+    bd.sesiones.forEach(s=>{
+      if(s.id === ses.id) return;
+      const v = s.ejercicios.find(x=> x.nom === e.nom);
+      if(!v) return;
+      v.series.forEach(x=>{ if(x.hecha && x.kg && x.reps) mejorAntes = Math.max(mejorAntes, e1rm(x.kg, x.reps)); });
+    });
+    const hoyMejor = Math.max(0, ...e.series.filter(x=>x.hecha).map(x=> e1rm(x.kg, x.reps)));
+    if(hoyMejor > 0 && mejorAntes > 0 && hoyMejor > mejorAntes * 1.005) records.push(e.nom);
+  });
+  if(records.length === 1) return "Récord en " + records[0].toLowerCase();
+  if(records.length > 1)  return records.length + " récords personales hoy";
+
+  // ¿es su mejor mes?
+  const porMes = {};
+  bd.sesiones.forEach(x=>{ const k = x.fecha.slice(0,7); (porMes[k] = porMes[k] || new Set()).add(x.fecha); });
+  const cuentas = Object.keys(porMes).map(k=> ({k, n:porMes[k].size}));
+  const tope = Math.max(...cuentas.map(c=> c.n));
+  if(esteMes >= tope && cuentas.length > 1 && esteMes > 1)
+    return esteMes + " en " + MES[f.getMonth()] + ", tu mejor mes";
+
+  // ¿superó al mes pasado?
+  const ant = new Date(f); ant.setDate(1); ant.setMonth(ant.getMonth()-1);
+  const prefAnt = ant.getFullYear() + "-" + String(ant.getMonth()+1).padStart(2,"0");
+  const nAnt = (porMes[prefAnt] || new Set()).size;
+  if(nAnt && esteMes > nAnt)
+    return esteMes + " en " + MES[f.getMonth()] + ", " + (esteMes - nAnt) + " más que el mes pasado";
+
+  // ¿cuántas semanas seguidas?
+  const lun = x=>{ const d2 = new Date(x + "T00:00:00"); d2.setDate(d2.getDate() - ((d2.getDay()+6)%7)); return iso(d2); };
+  const sem = new Set(bd.sesiones.map(x=> lun(x.fecha)));
+  let racha = 0, cur = new Date(); cur.setDate(cur.getDate() - ((cur.getDay()+6)%7));
+  while(sem.has(iso(cur))){ racha++; cur.setDate(cur.getDate()-7); }
+  if(racha >= 3) return racha + " semanas seguidas sin faltar";
+
+  return "Van " + esteMes + " en " + MES[f.getMonth()];
+}
+
 function contar(el, fin, ms, demora, miles){
   const t0 = performance.now() + demora*1000;
   (function paso(ahora){
@@ -1027,7 +1118,11 @@ function contar(el, fin, ms, demora, miles){
     if(k < 1) requestAnimationFrame(paso);
   })();
 }
-$("fX").addEventListener("click", ()=>{ $("fiesta").classList.remove("on"); ir("cal"); });
+$("fX").addEventListener("click", ()=>{
+  $("fiesta").classList.remove("on");
+  mesCal = null;            // vuelve al mes actual, con el día ya pintado
+  ir("cal");
+});
 
 /* ═════════ calendario ═════════ */
 let mesCal = null;
@@ -1045,17 +1140,17 @@ function pintarCal(){
   for(let i = 0; i < arranque; i++) celdas += `<div class="cd"></div>`;
   let enMes = 0;
   for(let n = 1; n <= dias; n++){
-    const iso = mesCal.a + "-" + String(mesCal.m+1).padStart(2,"0") + "-" + String(n).padStart(2,"0");
-    const dd = porFecha[iso];
+    const f = mesCal.a + "-" + String(mesCal.m+1).padStart(2,"0") + "-" + String(n).padStart(2,"0");
+    const dd = porFecha[f];
     if(dd) enMes++;
-    celdas += `<div class="cd mes ${dd?"hay c"+dd:""} ${iso===hoyISO()?"hoy":""}"
-      style="animation-delay:${(arranque+n-1)*13}ms">${n}${dd?`<i>D${dd}</i>`:""}</div>`;
+    celdas += `<button class="cd mes ${dd?"hay c"+dd:""} ${f===hoyISO()?"hoy":""}"
+      data-fecha="${f}" style="animation-delay:${(arranque+n-1)*13}ms">${n}${dd?`<i>D${dd}</i>`:""}</button>`;
   }
 
-  const lunes = f=>{ const x = new Date(f+"T00:00:00"); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x.toISOString().slice(0,10); };
+  const lunes = f=>{ const x = new Date(f+"T00:00:00"); x.setDate(x.getDate()-((x.getDay()+6)%7)); return iso(x); };
   const sem = new Set(bd.sesiones.map(s=> lunes(s.fecha)));
   let racha = 0, cur = new Date(); cur.setDate(cur.getDate()-((cur.getDay()+6)%7));
-  while(sem.has(cur.toISOString().slice(0,10))){ racha++; cur.setDate(cur.getDate()-7); }
+  while(sem.has(iso(cur))){ racha++; cur.setDate(cur.getDate()-7); }
   const tope = new Date(mesCal.a, mesCal.m+1, 0) >= new Date(ahora.getFullYear(), ahora.getMonth()+1, 0);
 
   $("calendario").innerHTML = `<div class="cal">
@@ -1073,6 +1168,9 @@ function pintarCal(){
     </div>
   </div>`;
 
+  $("calendario").querySelectorAll("[data-fecha]").forEach(b=>
+    b.addEventListener("click", ()=> abrirFecha(b.dataset.fecha)));
+
   $("cAnt").onclick = ()=>{ mesCal.m--; if(mesCal.m<0){ mesCal.m=11; mesCal.a--; } pintarCal(); };
   if($("cSig") && !$("cSig").disabled)
     $("cSig").onclick = ()=>{ mesCal.m++; if(mesCal.m>11){ mesCal.m=0; mesCal.a++; } pintarCal(); };
@@ -1084,10 +1182,14 @@ function pintarCal(){
           <span class="d">0${s.dia}</span>
           <span class="c"><b>${d ? d.titulo : ""}</b>
             <span>${fmtFecha(s.fecha)} · ${s.variante === "B" ? "con extras" : "solo la base"} · ${hechas(s)} series · ${Math.round(volumen(s)).toLocaleString("es-AR")} kg</span></span>
+          <button class="x" data-editar="${s.id}">✎</button>
           <button class="x" data-borrar="${s.id}">×</button>
         </div>`;
       }).join("")
     : `<p class="nada"><b>Todavía nada</b>Cuando termines tu primer día va a aparecer acá.</p>`;
+
+  $("listaSes").querySelectorAll("[data-editar]").forEach(b=>
+    b.addEventListener("click", ()=> editarSesion(+b.dataset.editar)));
 
   $("listaSes").querySelectorAll("[data-borrar]").forEach(b=>
     b.addEventListener("click", ()=>{
@@ -1095,6 +1197,39 @@ function pintarCal(){
       bd.sesiones = bd.sesiones.filter(x=> x.id !== +b.dataset.borrar);
       guardar(); pintarCal();
     }));
+}
+
+/* ═════════ editar desde el calendario ═════════ */
+function abrirFecha(f){
+  if(bd.activa && hechas(bd.activa) > 0){
+    alert("Primero terminá o descartá el entrenamiento que tenés abierto.");
+    return;
+  }
+  const ses = bd.sesiones.find(x=> x.fecha === f);
+  if(ses){ editarSesion(ses.id); return; }
+  if(f > hoyISO()){ alert("Todavía no llegaste a ese día."); return; }
+
+  const cual = prompt("¿Qué día entrenaste el " + fmtFecha(f) + "?\n\n" +
+    PLAN.map(d=> d.n + " · " + d.titulo).join("\n") + "\n\nEscribí 1, 2, 3 o 4:");
+  const n = parseInt(cual, 10);
+  if(!n || n < 1 || n > 4) return;
+  arrancar(n);
+  bd.activa.fecha = f;
+  bd.activa.editando = true;     // al terminar, se guarda con esa fecha
+  bd.activa.series = null;
+  guardar();
+  pintarSes();
+}
+
+function editarSesion(id){
+  const s = bd.sesiones.find(x=> x.id === id);
+  if(!s) return;
+  bd.activa = JSON.parse(JSON.stringify(s));
+  bd.activa.editando = true;
+  if(!bd.activa.inicio) bd.activa.inicio = Date.now() - (s.duracion || 60) * 60000;
+  guardar();
+  ir("ses");
+  pintarSes();
 }
 
 /* ═════════ progreso ═════════ */
@@ -1117,7 +1252,7 @@ const GRUPO_DE = (()=>{
 const lunesDe = f=>{
   const x = new Date(f + "T00:00:00");
   x.setDate(x.getDate() - ((x.getDay()+6)%7));
-  return x.toISOString().slice(0,10);
+  return iso(x);
 };
 
 // ── una dona hecha con trazos de círculo ──
@@ -1201,7 +1336,7 @@ function pintarProg(){
   }));
 
   /* ── series por grupo en los últimos 7 días ── */
-  const hace7 = new Date(Date.now() - 6*86400000).toISOString().slice(0,10);
+  const hace7 = (()=>{ const d = new Date(); d.setDate(d.getDate()-6); return iso(d); })();
   const setsGrupo = {};
   ses.filter(s=> s.fecha >= hace7).forEach(s=> s.ejercicios.forEach(e=>{
     const g = GRUPO_DE[e.nom] || "core";
@@ -1213,7 +1348,7 @@ function pintarProg(){
   const claves = [];
   for(let i = 7; i >= 0; i--){
     const d = new Date(); d.setDate(d.getDate() - i*7);
-    const l = lunesDe(d.toISOString().slice(0,10));
+    const l = lunesDe(iso(d));
     if(!claves.includes(l)) claves.push(l);
   }
   const porSem = claves.map(l=>{
